@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SPELL DUEL — by Ak</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+:root {
+  --gold: #ffcc44;
+  --red: #ff3333;
+  --blue: #44aaff;
+  --purple: #cc44ff;
+  --green: #44ffaa;
+  --bg: #050510;
+  --panel: rgba(10,10,30,0.85);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  overflow: hidden;
+  font-family: 'Share Tech Mono', monospace;
+  color: #fff;
+}
+
+/* ── Layers ── */
+#video { display:none; }
+
+#bg-canvas {
+  position:fixed; top:0; left:0;
+  width:100vw; height:100vh;
+  z-index:0;
+}
+
+#game-canvas {
+  position:fixed; top:0; left:0;
+  width:100vw; height:100vh;
+  z-index:1;
+}
+
+/* ── SCREENS ── */
+.screen {
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  z-index:50;
+  background: radial-gradient(ellipse at center, rgba(20,10,40,0.97) 0%, rgba(0,0,10,0.99) 100%);
+  transition: opacity 0.6s;
+}
+.screen.hidden { opacity:0; pointer-events:none; }
+
+/* ── TITLE SCREEN ── */
+#title-screen .emblem {
+  font-size: 5rem;
+  animation: float 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 30px var(--gold));
+}
+@keyframes float {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-15px); }
+}
+
+#title-screen h1 {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(2.5rem, 6vw, 5rem);
+  font-weight: 900;
+  letter-spacing: 12px;
+  background: linear-gradient(135deg, #ffcc44, #ff6600, #ffcc44);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: none;
+  margin-top: 16px;
+  animation: shimmer 3s infinite;
+  background-size: 200%;
+}
+@keyframes shimmer {
+  0%,100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+#title-screen p.sub {
+  margin-top: 8px;
+  letter-spacing: 6px;
+  font-size: 0.8rem;
+  color: var(--gold);
+  opacity: 0.7;
+}
+
+.spell-guide {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  max-width: 600px;
+  width: 90%;
+}
+
+.spell-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 16px 12px;
+  text-align: center;
+  transition: all 0.3s;
+}
+.spell-card:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: var(--gold);
+  transform: translateY(-4px);
+}
+.spell-card .icon { font-size: 2.2rem; }
+.spell-card .name {
+  font-family: 'Cinzel', serif;
+  font-size: 0.75rem;
+  color: var(--gold);
+  margin-top: 6px;
+  letter-spacing: 2px;
+}
+.spell-card .gesture {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.5);
+  margin-top: 4px;
+}
+.spell-card .desc {
+  font-size: 0.6rem;
+  color: rgba(255,255,255,0.35);
+  margin-top: 4px;
+}
+
+#start-btn {
+  margin-top: 36px;
+  padding: 14px 48px;
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  letter-spacing: 6px;
+  background: transparent;
+  border: 2px solid var(--gold);
+  color: var(--gold);
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+  position: relative;
+  overflow: hidden;
+}
+#start-btn::before {
+  content:'';
+  position:absolute; inset:0;
+  background: var(--gold);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s;
+  z-index:-1;
+}
+#start-btn:hover::before { transform: scaleX(1); }
+#start-btn:hover { color: #000; box-shadow: 0 0 30px var(--gold); }
+
+.by-ak {
+  margin-top: 20px;
+  font-size: 0.65rem;
+  letter-spacing: 4px;
+  opacity: 0.3;
+}
+
+/* ── HUD ── */
+#hud {
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  z-index:10; pointer-events:none;
+}
+
+#top-hud {
+  display:flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px;
+}
+
+.player-hud {
+  display:flex; flex-direction:column; gap:6px;
+  min-width: 180px;
+}
+.player-hud.right { align-items: flex-end; }
+
+.hud-name {
+  font-family: 'Cinzel', serif;
+  font-size: 0.75rem;
+  letter-spacing: 3px;
+  color: var(--gold);
+}
+
+.hp-bar-wrap {
+  width: 180px; height: 10px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.hp-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ff3333, #ff6600);
+  transition: width 0.3s;
+  box-shadow: 0 0 8px #ff3333;
+}
+.hp-bar.enemy { background: linear-gradient(90deg, #44aaff, #cc44ff); box-shadow: 0 0 8px #44aaff; }
+
+.mana-bar-wrap {
+  width: 180px; height: 6px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.mana-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4444ff, #cc44ff);
+  transition: width 0.3s;
+}
+
+#center-hud {
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+}
+#score-display {
+  font-family: 'Cinzel', serif;
+  font-size: 1.4rem;
+  color: var(--gold);
+  text-shadow: 0 0 20px var(--gold);
+  letter-spacing: 4px;
+}
+#wave-display {
+  font-size: 0.65rem;
+  letter-spacing: 3px;
+  opacity: 0.5;
+}
+#combo-display {
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  color: var(--purple);
+  text-shadow: 0 0 15px var(--purple);
+  letter-spacing: 2px;
+  min-height: 1.2em;
+}
+
+/* Current spell indicator */
+#spell-indicator {
+  position:fixed;
+  bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display:flex; gap:12px;
+}
+.spell-slot {
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  opacity: 0.4;
+  transition: all 0.2s;
+}
+.spell-slot.active {
+  opacity: 1;
+  transform: translateY(-6px);
+}
+.spell-slot .s-icon { font-size: 1.8rem; filter: drop-shadow(0 0 10px currentColor); }
+.spell-slot .s-name { font-size: 0.55rem; letter-spacing: 2px; color: var(--gold); }
+
+/* Gesture display bottom-left */
+#gesture-display {
+  position:fixed;
+  bottom: 20px; left: 20px;
+  z-index: 15;
+  font-size: 0.65rem;
+  letter-spacing: 2px;
+  opacity: 0.6;
+}
+#gesture-display span { color: var(--gold); font-size: 0.8rem; }
+
+/* Camera preview */
+#cam-preview {
+  position:fixed;
+  bottom: 20px; right: 20px;
+  width: 120px; height: 80px;
+  z-index: 15;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  overflow:hidden;
+  opacity: 0.5;
+}
+#cam-preview canvas { width:100%; height:100%; transform: scaleX(-1); }
+
+/* Big floating spell text */
+#spell-flash {
+  position:fixed;
+  top:38%; left:50%; transform:translate(-50%,-50%);
+  font-family: 'Cinzel', serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 900;
+  letter-spacing: 8px;
+  z-index: 20;
+  pointer-events:none;
+  opacity:0;
+  transition: opacity 0.2s;
+  text-shadow: 0 0 40px currentColor;
+}
+
+/* Damage numbers */
+.dmg-num {
+  position:fixed;
+  font-family: 'Cinzel', serif;
+  font-size: 2rem;
+  font-weight: 700;
+  pointer-events:none;
+  z-index: 20;
+  animation: dmg-float 1s forwards;
+}
+@keyframes dmg-float {
+  0% { opacity:1; transform:translateY(0) scale(1); }
+  100% { opacity:0; transform:translateY(-80px) scale(1.4); }
+}
+
+/* Game over screen */
+#gameover-screen h1 {
+  font-family: 'Cinzel', serif;
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 900;
+  letter-spacing: 8px;
+  color: var(--red);
+  text-shadow: 0 0 40px var(--red), 0 0 80px var(--red);
+  animation: pulse-glow 1s infinite;
+}
+@keyframes pulse-glow {
+  0%,100% { text-shadow: 0 0 40px var(--red), 0 0 80px var(--red); }
+  50% { text-shadow: 0 0 20px var(--red); }
+}
+#gameover-screen .final-score {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  color: var(--gold);
+  margin-top: 20px;
+  letter-spacing: 4px;
+}
+#gameover-screen .wave-reached {
+  font-size: 0.8rem;
+  opacity: 0.5;
+  margin-top: 8px;
+  letter-spacing: 3px;
+}
+#retry-btn {
+  margin-top: 36px;
+  padding: 12px 40px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  letter-spacing: 5px;
+  background: transparent;
+  border: 2px solid var(--red);
+  color: var(--red);
+  cursor: pointer;
+  transition: all 0.3s;
+  pointer-events: all;
+}
+#retry-btn:hover { background: var(--red); color:#fff; box-shadow: 0 0 30px var(--red); }
+
+/* Loading screen */
+#loader {
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  background:#000;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  z-index:200;
+  font-family:'Cinzel',serif;
+}
+#loader h1 { font-size:1.5rem; letter-spacing:6px; color:var(--gold); animation: pulse-glow2 1.5s infinite; }
+@keyframes pulse-glow2 {
+  0%,100%{opacity:1}50%{opacity:0.4}
+}
+#loader p { margin-top:12px; font-family:'Share Tech Mono',monospace; font-size:0.7rem; letter-spacing:3px; opacity:0.5; }
+#load-bar-wrap { margin-top:20px; width:220px; height:2px; background:rgba(255,204,68,0.2); }
+#load-bar { height:100%; width:0%; background:var(--gold); transition:width 0.4s; box-shadow:0 0 10px var(--gold); }
+</style>
+</head>
+<body>
+
+<video id="video" autoplay playsinline></video>
+
+<!-- Loading -->
+<div id="loader">
+  <h1>⚔ SPELL DUEL</h1>
+  <p>INITIALIZING ARCANE SYSTEMS...</p>
+  <div id="load-bar-wrap"><div id="load-bar"></div></div>
+  <p style="margin-top:10px;font-size:0.6rem">ALLOW CAMERA ACCESS WHEN PROMPTED</p>
+</div>
+
+<!-- Background canvas -->
+<canvas id="bg-canvas"></canvas>
+
+<!-- Main game canvas -->
+<canvas id="game-canvas"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="top-hud">
+    <!-- Player stats -->
+    <div class="player-hud">
+      <div class="hud-name">⚔ YOU</div>
+      <div class="hp-bar-wrap"><div class="hp-bar" id="player-hp-bar"></div></div>
+      <div class="mana-bar-wrap"><div class="mana-bar" id="player-mana-bar"></div></div>
+    </div>
+    <!-- Center -->
+    <div id="center-hud">
+      <div id="score-display">0</div>
+      <div id="wave-display">WAVE 1</div>
+      <div id="combo-display"></div>
+    </div>
+    <!-- Enemy stats -->
+    <div class="player-hud right">
+      <div class="hud-name">DARK MAGE ☠</div>
+      <div class="hp-bar-wrap"><div class="hp-bar enemy" id="enemy-hp-bar"></div></div>
+      <div class="mana-bar-wrap"><div class="mana-bar" id="enemy-mana-bar" style="background:linear-gradient(90deg,#cc44ff,#4444ff)"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Spell slots -->
+<div id="spell-indicator">
+  <div class="spell-slot" id="slot-fireball">
+    <div class="s-icon" style="color:#ff6600">🔥</div>
+    <div class="s-name">FIREBALL</div>
+    <div style="font-size:0.5rem;opacity:0.4">POINT ☝</div>
+  </div>
+  <div class="spell-slot" id="slot-lightning">
+    <div class="s-icon" style="color:#ffff00">⚡</div>
+    <div class="s-name">LIGHTNING</div>
+    <div style="font-size:0.5rem;opacity:0.4">PEACE ✌</div>
+  </div>
+  <div class="spell-slot" id="slot-shield">
+    <div class="s-icon" style="color:#44aaff">🛡</div>
+    <div class="s-name">SHIELD</div>
+    <div style="font-size:0.5rem;opacity:0.4">OPEN 🖐</div>
+  </div>
+  <div class="spell-slot" id="slot-void">
+    <div class="s-icon" style="color:#cc44ff">💀</div>
+    <div class="s-name">VOID BLAST</div>
+    <div style="font-size:0.5rem;opacity:0.4">FIST ✊</div>
+  </div>
+</div>
+
+<!-- Gesture label -->
+<div id="gesture-display">GESTURE: <span id="gesture-text">—</span></div>
+
+<!-- Camera preview -->
+<div id="cam-preview"><canvas id="cam-canvas"></canvas></div>
+
+<!-- Spell flash -->
+<div id="spell-flash"></div>
+
+<!-- Title Screen -->
+<div class="screen" id="title-screen">
+  <div class="emblem">⚔</div>
+  <h1>SPELL DUEL</h1>
+  <p class="sub">GESTURE-CONTROLLED ARCANE BATTLE</p>
+
+  <div class="spell-guide">
+    <div class="spell-card">
+      <div class="icon">🔥</div>
+      <div class="name">FIREBALL</div>
+      <div class="gesture">☝ POINT</div>
+      <div class="desc">Fast projectile. Medium damage.</div>
+    </div>
+    <div class="spell-card">
+      <div class="icon">⚡</div>
+      <div class="name">LIGHTNING</div>
+      <div class="gesture">✌ PEACE</div>
+      <div class="desc">High damage. Stuns enemy briefly.</div>
+    </div>
+    <div class="spell-card">
+      <div class="icon">🛡</div>
+      <div class="name">SHIELD</div>
+      <div class="gesture">🖐 OPEN PALM</div>
+      <div class="desc">Blocks next attack. Restores mana.</div>
+    </div>
+    <div class="spell-card">
+      <div class="icon">💀</div>
+      <div class="name">VOID BLAST</div>
+      <div class="gesture">✊ FIST</div>
+      <div class="desc">Huge damage. Long cooldown.</div>
+    </div>
+    <div class="spell-card">
+      <div class="icon">✨</div>
+      <div class="name">COMBO</div>
+      <div class="gesture">🔗 CHAIN SPELLS</div>
+      <div class="desc">3x combo = bonus damage!</div>
+    </div>
+    <div class="spell-card">
+      <div class="icon">📸</div>
+      <div class="name">CAMERA</div>
+      <div class="gesture">👌 PINCH</div>
+      <div class="desc">Bad camera? Still works fine!</div>
+    </div>
+  </div>
+
+  <button id="start-btn" onclick="startGame()">⚔ BEGIN DUEL</button>
+  <div class="by-ak">BUILT BY AK • POWERED BY MEDIAPIPE</div>
+</div>
+
+<!-- Game Over Screen -->
+<div class="screen hidden" id="gameover-screen">
+  <h1 id="go-title">DEFEATED</h1>
+  <div class="final-score">SCORE: <span id="final-score">0</span></div>
+  <div class="wave-reached">SURVIVED TO WAVE <span id="final-wave">1</span></div>
+  <button id="retry-btn" onclick="retryGame()">↺ DUEL AGAIN</button>
+</div>
+
+<script>
+/* ══════════════════════════════════════════
+   GAME STATE
+══════════════════════════════════════════ */
+const STATE = {
+  screen: 'title', // title | game | gameover
+  player: { hp: 100, maxHp: 100, mana: 100, maxMana: 100, shielded: false },
+  enemy:  { hp: 100, maxHp: 100, mana: 100, stunned: 0, attackTimer: 0, attackInterval: 3000 },
+  score: 0,
+  wave: 1,
+  combo: 0,
+  comboTimer: 0,
+  currentGesture: 'NONE',
+  lastSpell: null,
+  spellCooldowns: { FIREBALL:0, LIGHTNING:0, SHIELD:0, VOID:0 },
+  particles: [],
+  projectiles: [],
+  enemyProjectiles: [],
+  stars: [],
+  bgParticles: [],
+  shieldAngle: 0,
+  enemyShieldAngle: 0,
+  enemyShielded: false,
+  gestureHoldTime: 0,
+  lastGesture: 'NONE',
+  animFrame: 0,
+};
+
+const SPELLS = {
+  FIREBALL:  { damage:18, manaCost:15, cooldown:800,  color:'#ff6600', flash:'🔥 FIREBALL!',  flashColor:'#ff6600' },
+  LIGHTNING: { damage:30, manaCost:25, cooldown:1400, color:'#ffff44', flash:'⚡ LIGHTNING!', flashColor:'#ffff44' },
+  SHIELD:    { damage:0,  manaCost:10, cooldown:2000, color:'#44aaff', flash:'🛡 SHIELD!',    flashColor:'#44aaff' },
+  VOID:      { damage:55, manaCost:45, cooldown:4000, color:'#cc44ff', flash:'💀 VOID BLAST!',flashColor:'#cc44ff' },
+};
+
+/* ══════════════════════════════════════════
+   CANVAS SETUP
+══════════════════════════════════════════ */
+const bgCanvas  = document.getElementById('bg-canvas');
+const bgCtx     = bgCanvas.getContext('2d');
+const gc        = document.getElementById('game-canvas');
+const ctx       = gc.getContext('2d');
+const camCanvas = document.getElementById('cam-canvas');
+const camCtx    = camCanvas.getContext('2d');
+const videoEl   = document.getElementById('video');
+
+function resize() {
+  [bgCanvas, gc].forEach(c => { c.width = window.innerWidth; c.height = window.innerHeight; });
+  camCanvas.width  = 120; camCanvas.height = 80;
+}
+resize();
+window.addEventListener('resize', resize);
+
+const W = () => gc.width;
+const H = () => gc.height;
+
+/* ══════════════════════════════════════════
+   AUDIO ENGINE
+══════════════════════════════════════════ */
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playTone(freq, type, duration, volume=0.3) {
+  ensureAudio();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.connect(g); g.connect(audioCtx.destination);
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(volume, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  o.start(); o.stop(audioCtx.currentTime + duration);
+}
+function playFireball()  { playTone(200,'sawtooth',0.3,0.25); setTimeout(()=>playTone(100,'sawtooth',0.2,0.1),150); }
+function playLightning() { playTone(800,'square',0.05,0.3); playTone(400,'square',0.15,0.2); playTone(200,'sawtooth',0.3,0.15); }
+function playShield()    { playTone(300,'sine',0.4,0.2); setTimeout(()=>playTone(500,'sine',0.3,0.15),100); }
+function playVoid()      {
+  ensureAudio();
+  [80,60,40].forEach((f,i)=>setTimeout(()=>playTone(f,'sawtooth',0.5,0.3),i*100));
+}
+function playHit()       { playTone(150,'sawtooth',0.15,0.2); }
+function playEnemyAttack(){ playTone(600,'square',0.1,0.15); setTimeout(()=>playTone(300,'sawtooth',0.2,0.1),80); }
+function playLevelUp()   { [400,500,600,800].forEach((f,i)=>setTimeout(()=>playTone(f,'sine',0.3,0.2),i*120)); }
+function playGameOver()  { [400,300,200,150].forEach((f,i)=>setTimeout(()=>playTone(f,'sawtooth',0.4,0.3),i*150)); }
+
+/* ══════════════════════════════════════════
+   PARTICLE SYSTEM
+══════════════════════════════════════════ */
+function spawnParticles(x, y, color, count=15, speed=4, gravity=0.1) {
+  for (let i=0; i<count; i++) {
+    const a = Math.random()*Math.PI*2;
+    const s = speed * (0.5+Math.random());
+    STATE.particles.push({
+      x,y,
+      vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+      color, size: 2+Math.random()*4,
+      life: 1, decay: 0.02+Math.random()*0.02,
+      gravity
+    });
+  }
+}
+
+function updateParticles() {
+  for (let i=STATE.particles.length-1; i>=0; i--) {
+    const p = STATE.particles[i];
+    p.x+=p.vx; p.y+=p.vy; p.vy+=p.gravity;
+    p.vx*=0.97; p.life-=p.decay;
+    if (p.life<=0){ STATE.particles.splice(i,1); continue; }
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);
+    ctx.fillStyle = p.color + Math.floor(p.life*255).toString(16).padStart(2,'0');
+    ctx.shadowBlur=10; ctx.shadowColor=p.color;
+    ctx.fill(); ctx.shadowBlur=0;
+  }
+}
+
+/* ══════════════════════════════════════════
+   DAMAGE NUMBER POPUP
+══════════════════════════════════════════ */
+function showDamageNumber(x, y, amount, color='#ff6600') {
+  const el = document.createElement('div');
+  el.className='dmg-num';
+  el.textContent = amount > 0 ? `-${amount}` : 'BLOCKED!';
+  el.style.left = x+'px'; el.style.top = y+'px';
+  el.style.color = color;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),1000);
+}
+
+/* ══════════════════════════════════════════
+   SPELL FLASH
+══════════════════════════════════════════ */
+let flashTimer = null;
+function showSpellFlash(text, color) {
+  const el = document.getElementById('spell-flash');
+  el.textContent = text; el.style.color = color; el.style.opacity='1';
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(()=>el.style.opacity='0', 900);
+}
+
+/* ══════════════════════════════════════════
+   PROJECTILE SYSTEM
+══════════════════════════════════════════ */
+function fireProjectile(spell, fromPlayer=true) {
+  const startX = fromPlayer ? W()*0.15 : W()*0.85;
+  const startY = H()*0.5;
+  const targetX = fromPlayer ? W()*0.85 : W()*0.15;
+  const speed = spell==='VOID' ? 6 : spell==='LIGHTNING' ? 14 : 9;
+  const dx = targetX-startX;
+  const dy = (Math.random()-0.5)*H()*0.3;
+  const dist = Math.hypot(dx,dy);
+  const arr = fromPlayer ? STATE.projectiles : STATE.enemyProjectiles;
+  arr.push({
+    x:startX, y:startY,
+    vx: dx/dist*speed, vy: dy/dist*speed,
+    spell, color: SPELLS[spell]?.color||'#ff6600',
+    fromPlayer, size: spell==='VOID'?18:spell==='LIGHTNING'?10:12,
+    trail:[], life:1
+  });
+}
+
+function updateProjectiles() {
+  [...STATE.projectiles, ...STATE.enemyProjectiles].forEach(p=>{
+    p.trail.push({x:p.x, y:p.y});
+    if(p.trail.length>12) p.trail.shift();
+    // Draw trail
+    p.trail.forEach((pt,i)=>{
+      const a = (i/p.trail.length)*0.6;
+      ctx.beginPath();
+      ctx.arc(pt.x,pt.y,p.size*(i/p.trail.length)*0.8,0,Math.PI*2);
+      ctx.fillStyle=p.color+Math.floor(a*255).toString(16).padStart(2,'0');
+      ctx.fill();
+    });
+    // Draw projectile
+    ctx.beginPath();
+    ctx.arc(p.x,p.y,p.size,0,Math.PI*2);
+    const grad = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.size);
+    grad.addColorStop(0,'#ffffff');
+    grad.addColorStop(0.4,p.color);
+    grad.addColorStop(1,p.color+'00');
+    ctx.fillStyle=grad;
+    ctx.shadowBlur=20; ctx.shadowColor=p.color;
+    ctx.fill(); ctx.shadowBlur=0;
+    // Lightning bolt shape
+    if(p.spell==='LIGHTNING'){
+      ctx.beginPath();
+      ctx.moveTo(p.x,p.y-p.size);
+      ctx.lineTo(p.x+6,p.y);
+      ctx.lineTo(p.x-4,p.y+6);
+      ctx.strokeStyle='#ffffffcc';
+      ctx.lineWidth=2;
+      ctx.stroke();
+    }
+    p.x+=p.vx; p.y+=p.vy;
+    // Slight homing
+    if(p.fromPlayer){ if(p.x<W()*0.5) p.vy*=0.98; }
+    else { if(p.x>W()*0.5) p.vy*=0.98; }
+  });
+
+  // Check player projectiles hitting enemy
+  for(let i=STATE.projectiles.length-1;i>=0;i--){
+    const p=STATE.projectiles[i];
+    if(p.x > W()*0.8 || p.x<0 || p.y<0 || p.y>H()){
+      if(p.x>W()*0.8 && STATE.enemy.stunned<=0){
+        hitEnemy(p);
+      }
+      spawnParticles(p.x,p.y,p.color,20,5);
+      STATE.projectiles.splice(i,1);
+    }
+  }
+  // Check enemy projectiles hitting player
+  for(let i=STATE.enemyProjectiles.length-1;i>=0;i--){
+    const p=STATE.enemyProjectiles[i];
+    if(p.x<W()*0.2 || p.x>W() || p.y<0 || p.y>H()){
+      if(p.x<W()*0.2) hitPlayer(p);
+      spawnParticles(p.x,p.y,p.color,15,4);
+      STATE.enemyProjectiles.splice(i,1);
+    }
+  }
+}
+
+function hitEnemy(p) {
+  if(STATE.enemyShielded){ showDamageNumber(W()*0.85,H()*0.4,0,'#44aaff'); return; }
+  const spell = SPELLS[p.spell];
+  let dmg = spell.damage;
+  // Combo bonus
+  if(STATE.combo>=3) { dmg = Math.floor(dmg*1.5); showSpellFlash('💥 COMBO x'+STATE.combo+'!','#ffcc44'); }
+  STATE.enemy.hp = Math.max(0, STATE.enemy.hp - dmg);
+  STATE.score += dmg * STATE.wave;
+  STATE.combo++;
+  STATE.comboTimer = 3000;
+  if(p.spell==='LIGHTNING') STATE.enemy.stunned = 1500;
+  showDamageNumber(W()*0.85, H()*0.4, dmg, p.color);
+  spawnParticles(W()*0.85,H()*0.5,p.color,30,6);
+  playHit();
+  updateHUD();
+  if(STATE.enemy.hp<=0) nextWave();
+}
+
+function hitPlayer(p) {
+  if(STATE.player.shielded){
+    showDamageNumber(W()*0.15,H()*0.4,0,'#44aaff');
+    STATE.player.shielded=false;
+    STATE.player.mana=Math.min(STATE.player.maxMana, STATE.player.mana+20);
+    spawnParticles(W()*0.15,H()*0.5,'#44aaff',25,5);
+    return;
+  }
+  const dmg = SPELLS[p.spell]?.damage || 15;
+  STATE.player.hp = Math.max(0, STATE.player.hp - dmg);
+  STATE.combo=0;
+  showDamageNumber(W()*0.15,H()*0.4,dmg,'#ff3333');
+  spawnParticles(W()*0.15,H()*0.5,'#ff3333',25,5);
+  playHit();
+  updateHUD();
+  if(STATE.player.hp<=0) gameOver();
+}
+
+/* ══════════════════════════════════════════
+   ENEMY AI
+══════════════════════════════════════════ */
+const ENEMY_SPELLS = ['FIREBALL','FIREBALL','LIGHTNING','SHIELD'];
+
+function updateEnemy(dt) {
+  if(STATE.screen!=='game') return;
+  if(STATE.enemy.stunned>0){ STATE.enemy.stunned-=dt; return; }
+  STATE.enemy.attackTimer+=dt;
+  const interval = Math.max(1200, STATE.enemy.attackInterval - STATE.wave*150);
+  if(STATE.enemy.attackTimer>=interval){
+    STATE.enemy.attackTimer=0;
+    const spell = ENEMY_SPELLS[Math.floor(Math.random()*ENEMY_SPELLS.length)];
+    if(spell==='SHIELD'){
+      STATE.enemyShielded=true;
+      setTimeout(()=>STATE.enemyShielded=false, 2000);
+      spawnParticles(W()*0.85,H()*0.5,'#44aaff',20,4);
+    } else {
+      fireProjectile(spell, false);
+      playEnemyAttack();
+    }
+    // Mana regen
+    STATE.enemy.mana=Math.min(100,STATE.enemy.mana+20);
+    updateHUD();
+  }
+  // Enemy mana slow regen
+  STATE.enemy.mana=Math.min(100,STATE.enemy.mana+dt*0.005);
+}
+
+/* ══════════════════════════════════════════
+   PLAYER FIGURES (drawn on canvas)
+══════════════════════════════════════════ */
+function drawPlayerFigure(x, y, isEnemy=false, shielded=false, stunned=false) {
+  const color = isEnemy ? '#cc44ff' : '#44aaff';
+  const glow  = isEnemy ? '#cc44ff' : '#44aaff';
+  ctx.save();
+  ctx.shadowBlur=20; ctx.shadowColor=glow;
+  // Body
+  ctx.strokeStyle=color; ctx.lineWidth=2;
+  // Head
+  ctx.beginPath(); ctx.arc(x, y-60, 14, 0, Math.PI*2); ctx.stroke();
+  // Torso
+  ctx.beginPath(); ctx.moveTo(x,y-46); ctx.lineTo(x,y-10); ctx.stroke();
+  // Arms
+  const armSwing = Math.sin(STATE.animFrame*0.05)*15;
+  ctx.beginPath();
+  ctx.moveTo(x,y-40);
+  ctx.lineTo(x+(isEnemy?1:-1)*30, y-25+armSwing);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x,y-40);
+  ctx.lineTo(x+(isEnemy?-1:1)*30, y-25-armSwing);
+  ctx.stroke();
+  // Legs
+  const legSwing = Math.sin(STATE.animFrame*0.03)*10;
+  ctx.beginPath(); ctx.moveTo(x,y-10); ctx.lineTo(x-10,y+20+legSwing); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x,y-10); ctx.lineTo(x+10,y+20-legSwing); ctx.stroke();
+  // Staff/wand
+  ctx.beginPath();
+  ctx.moveTo(x+(isEnemy?-1:1)*30, y-25);
+  ctx.lineTo(x+(isEnemy?-1:1)*55, y-50);
+  ctx.strokeStyle=isEnemy?'#ff44aa':'#ffcc44';
+  ctx.lineWidth=3; ctx.stroke();
+  // Staff orb
+  ctx.beginPath();
+  ctx.arc(x+(isEnemy?-1:1)*55, y-50, 6, 0, Math.PI*2);
+  ctx.fillStyle=isEnemy?'#ff44aa':'#ffcc44';
+  ctx.shadowBlur=15; ctx.shadowColor=isEnemy?'#ff44aa':'#ffcc44';
+  ctx.fill();
+  ctx.shadowBlur=0;
+
+  // Shield effect
+  if(shielded){
+    STATE.shieldAngle+=(isEnemy?-0.03:0.03);
+    ctx.save();
+    ctx.translate(x,y-30);
+    ctx.rotate(STATE.shieldAngle);
+    ctx.beginPath();
+    ctx.arc(0,0,40,0,Math.PI*2);
+    ctx.strokeStyle='#44aaff88';
+    ctx.lineWidth=3;
+    ctx.setLineDash([8,4]);
+    ctx.shadowBlur=20; ctx.shadowColor='#44aaff';
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // Stun stars
+  if(stunned){
+    for(let i=0;i<3;i++){
+      const a = STATE.animFrame*0.1 + i*(Math.PI*2/3);
+      const sx = x+Math.cos(a)*25;
+      const sy = y-75+Math.sin(a)*8;
+      ctx.font='14px serif';
+      ctx.fillText('⭐',sx-7,sy+5);
+    }
+  }
+  ctx.restore();
+}
+
+/* ══════════════════════════════════════════
+   ARENA BACKGROUND
+══════════════════════════════════════════ */
+function initStars() {
+  STATE.stars = Array.from({length:120},()=>({
+    x:Math.random(), y:Math.random(),
+    size:Math.random()*2, speed:0.0002+Math.random()*0.0003,
+    opacity:0.3+Math.random()*0.7
+  }));
+}
+
+function drawArena() {
+  // Deep space bg
+  bgCtx.fillStyle='#050510';
+  bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height);
+  // Stars
+  STATE.stars.forEach(s=>{
+    s.x-=s.speed; if(s.x<0) s.x=1;
+    bgCtx.beginPath();
+    bgCtx.arc(s.x*bgCanvas.width, s.y*bgCanvas.height, s.size,0,Math.PI*2);
+    bgCtx.fillStyle=`rgba(255,255,255,${s.opacity})`;
+    bgCtx.fill();
+  });
+  // Ground line
+  bgCtx.strokeStyle='rgba(255,204,68,0.15)';
+  bgCtx.lineWidth=1;
+  bgCtx.beginPath();
+  bgCtx.moveTo(0,bgCanvas.height*0.72);
+  bgCtx.lineTo(bgCanvas.width,bgCanvas.height*0.72);
+  bgCtx.stroke();
+  // Arena circle
+  bgCtx.beginPath();
+  bgCtx.arc(bgCanvas.width/2,bgCanvas.height*0.72,bgCanvas.width*0.45,Math.PI,Math.PI*2);
+  bgCtx.strokeStyle='rgba(255,204,68,0.08)';
+  bgCtx.lineWidth=1; bgCtx.stroke();
+  // Pillars
+  [0.1,0.9].forEach(xf=>{
+    const px=bgCanvas.width*xf, py=bgCanvas.height*0.72;
+    bgCtx.fillStyle='rgba(255,204,68,0.06)';
+    bgCtx.fillRect(px-12,py-bgCanvas.height*0.35,24,bgCanvas.height*0.35);
+    bgCtx.beginPath();
+    bgCtx.arc(px,py-bgCanvas.height*0.35,18,Math.PI,Math.PI*2);
+    bgCtx.fill();
+  });
+  // Center divider glow
+  bgCtx.strokeStyle=`rgba(255,204,68,${0.06+0.04*Math.sin(Date.now()*0.002)})`;
+  bgCtx.lineWidth=1;
+  bgCtx.setLineDash([6,6]);
+  bgCtx.beginPath();
+  bgCtx.moveTo(bgCanvas.width/2,0);
+  bgCtx.lineTo(bgCanvas.width/2,bgCanvas.height);
+  bgCtx.stroke(); bgCtx.setLineDash([]);
+}
+
+/* ══════════════════════════════════════════
+   HUD UPDATES
+══════════════════════════════════════════ */
+function updateHUD() {
+  document.getElementById('player-hp-bar').style.width   = STATE.player.hp/STATE.player.maxHp*100+'%';
+  document.getElementById('player-mana-bar').style.width = STATE.player.mana/STATE.player.maxMana*100+'%';
+  document.getElementById('enemy-hp-bar').style.width    = STATE.enemy.hp/STATE.enemy.maxHp*100+'%';
+  document.getElementById('enemy-mana-bar').style.width  = STATE.enemy.mana/100*100+'%';
+  document.getElementById('score-display').textContent   = STATE.score;
+  document.getElementById('wave-display').textContent    = 'WAVE '+STATE.wave;
+  document.getElementById('combo-display').textContent   = STATE.combo>=2?'COMBO x'+STATE.combo:'';
+
+  // Update spell slots
+  const now=Date.now();
+  Object.keys(STATE.spellCooldowns).forEach(spell=>{
+    const slotId='slot-'+spell.toLowerCase();
+    const el=document.getElementById(slotId);
+    if(!el) return;
+    el.classList.toggle('active', STATE.currentGesture===gestureForSpell(spell));
+  });
+}
+
+function gestureForSpell(spell){
+  return {FIREBALL:'POINT',LIGHTNING:'PEACE',SHIELD:'OPEN',VOID:'FIST'}[spell]||'';
+}
+
+/* ══════════════════════════════════════════
+   CAST SPELL
+══════════════════════════════════════════ */
+function castSpell(spell) {
+  const now=Date.now();
+  if(now<STATE.spellCooldowns[spell]) return;
+  const s=SPELLS[spell];
+  if(STATE.player.mana<s.manaCost) return;
+  STATE.player.mana-=s.manaCost;
+  STATE.spellCooldowns[spell]=now+s.cooldown;
+  if(spell==='SHIELD'){
+    STATE.player.shielded=true;
+    setTimeout(()=>STATE.player.shielded=false,2500);
+    spawnParticles(W()*0.15,H()*0.5,'#44aaff',25,4,0);
+    playShield();
+  } else {
+    fireProjectile(spell,true);
+    if(spell==='FIREBALL') playFireball();
+    else if(spell==='LIGHTNING') playLightning();
+    else if(spell==='VOID') playVoid();
+  }
+  showSpellFlash(s.flash, s.flashColor);
+  updateHUD();
+}
+
+/* ══════════════════════════════════════════
+   GESTURE → SPELL MAPPING
+   Holds gesture for 300ms before casting
+   so accidental triggers don't fire
+══════════════════════════════════════════ */
+const GESTURE_SPELL = { POINT:'FIREBALL', PEACE:'LIGHTNING', OPEN:'SHIELD', FIST:'VOID' };
+let gestureHoldStart = 0;
+let heldGesture = null;
+
+function processGesture(gesture) {
+  STATE.currentGesture=gesture;
+  document.getElementById('gesture-text').textContent=gesture;
+  const spell=GESTURE_SPELL[gesture];
+  if(!spell){ heldGesture=null; return; }
+  if(gesture!==heldGesture){
+    heldGesture=gesture;
+    gestureHoldStart=Date.now();
+  } else {
+    // Cast after holding 350ms (works even with shaky camera)
+    if(Date.now()-gestureHoldStart>350){
+      castSpell(spell);
+      gestureHoldStart=Date.now()+500; // slight delay before can cast again
+    }
+  }
+}
+
+/* ══════════════════════════════════════════
+   MEDIAPIPE GESTURE DETECTION
+   Same logic as before but tuned for game:
+   - Tolerant thresholds for bad cameras
+   - Smoothed over multiple frames
+══════════════════════════════════════════ */
+const videoEl2 = document.getElementById('video');
+let smoothedGesture = 'NONE';
+let gestureHistory = [];
+
+function dist2(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+function fingerUp(lm,tip,base){ return lm[tip].y < lm[base].y - 0.02; } // 0.02 tolerance
+
+function detectGesture(lm) {
+  const thumbUp  = lm[4].x < lm[3].x; // thumb extended sideways
+  const indexUp  = fingerUp(lm,8,6);
+  const middleUp = fingerUp(lm,12,10);
+  const ringUp   = fingerUp(lm,16,14);
+  const pinkyUp  = fingerUp(lm,20,18);
+  const pinch    = dist2(lm[4],lm[8])<0.06;
+
+  if(pinch) return 'PINCH';
+  if(indexUp && !middleUp && !ringUp && !pinkyUp) return 'POINT';
+  if(indexUp && middleUp && !ringUp && !pinkyUp)  return 'PEACE';
+  if(indexUp && middleUp && ringUp && pinkyUp)    return 'OPEN';
+  if(!indexUp && !middleUp && !ringUp && !pinkyUp) return 'FIST';
+  return 'WAVE';
+}
+
+// Smooth gesture over last 5 frames — tolerates bad cameras
+function smoothGesture(g) {
+  gestureHistory.push(g);
+  if(gestureHistory.length>5) gestureHistory.shift();
+  const counts={};
+  gestureHistory.forEach(x=>counts[x]=(counts[x]||0)+1);
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+}
+
+function onResults(results) {
+  // Draw camera preview
+  camCtx.save();
+  camCtx.translate(camCanvas.width,0);
+  camCtx.scale(-1,1);
+  camCtx.drawImage(videoEl2,0,0,camCanvas.width,camCanvas.height);
+  camCtx.restore();
+
+  if(STATE.screen!=='game') return;
+
+  if(results.multiHandLandmarks && results.multiHandLandmarks.length>0) {
+    const lm=results.multiHandLandmarks[0];
+    const raw=detectGesture(lm);
+    const smooth=smoothGesture(raw);
+    processGesture(smooth);
+  } else {
+    smoothGesture('NONE');
+    processGesture('NONE');
+  }
+}
+
+/* ══════════════════════════════════════════
+   WAVE SYSTEM
+══════════════════════════════════════════ */
+function nextWave() {
+  STATE.wave++;
+  playLevelUp();
+  showSpellFlash('⚔ WAVE '+STATE.wave, '#ffcc44');
+  spawnParticles(W()/2,H()/2,'#ffcc44',50,8,-0.05);
+  // Heal player slightly
+  STATE.player.hp=Math.min(STATE.player.maxHp, STATE.player.hp+20);
+  STATE.player.mana=STATE.player.maxMana;
+  // Tougher enemy
+  const newMaxHp=100+STATE.wave*25;
+  STATE.enemy={ hp:newMaxHp, maxHp:newMaxHp, mana:100, stunned:0,
+    attackTimer:0, attackInterval:Math.max(1200,3000-STATE.wave*200) };
+  STATE.enemyShielded=false;
+  STATE.projectiles=[];
+  STATE.enemyProjectiles=[];
+  updateHUD();
+}
+
+/* ══════════════════════════════════════════
+   MANA REGEN
+══════════════════════════════════════════ */
+function regenMana(dt) {
+  STATE.player.mana=Math.min(STATE.player.maxMana, STATE.player.mana+dt*0.008);
+}
+
+/* ══════════════════════════════════════════
+   COMBO TIMER
+══════════════════════════════════════════ */
+function updateCombo(dt) {
+  if(STATE.comboTimer>0){
+    STATE.comboTimer-=dt;
+    if(STATE.comboTimer<=0) STATE.combo=0;
+  }
+}
+
+/* ══════════════════════════════════════════
+   MAIN GAME LOOP
+══════════════════════════════════════════ */
+let lastTimestamp=0;
+
+function gameLoop(timestamp) {
+  requestAnimationFrame(gameLoop);
+  STATE.animFrame++;
+  const dt=Math.min(timestamp-lastTimestamp,50); // cap delta at 50ms
+  lastTimestamp=timestamp;
+
+  drawArena();
+  ctx.clearRect(0,0,W(),H());
+
+  if(STATE.screen!=='game'){ return; }
+
+  // Ground shadow circles
+  [0.15,0.85].forEach((xf,i)=>{
+    const x=W()*xf, y=H()*0.72;
+    ctx.beginPath();
+    ctx.ellipse(x,y,35,8,0,0,Math.PI*2);
+    ctx.fillStyle=i===0?'rgba(68,170,255,0.15)':'rgba(204,68,255,0.15)';
+    ctx.fill();
+  });
+
+  // Draw figures
+  drawPlayerFigure(W()*0.15, H()*0.68, false, STATE.player.shielded, false);
+  drawPlayerFigure(W()*0.85, H()*0.68, true, STATE.enemyShielded, STATE.enemy.stunned>0);
+
+  // Enemy stunned effect
+  if(STATE.enemy.stunned>0){
+    ctx.fillStyle='rgba(255,255,0,0.05)';
+    ctx.fillRect(W()*0.7,0,W()*0.3,H());
+  }
+
+  updateProjectiles();
+  updateParticles();
+  updateEnemy(dt);
+  regenMana(dt);
+  updateCombo(dt);
+  updateHUD();
+}
+
+/* ══════════════════════════════════════════
+   GAME CONTROL
+══════════════════════════════════════════ */
+function startGame() {
+  ensureAudio();
+  document.getElementById('title-screen').classList.add('hidden');
+  STATE.screen='game';
+  STATE.player={hp:100,maxHp:100,mana:100,maxMana:100,shielded:false};
+  STATE.enemy={hp:100,maxHp:100,mana:100,stunned:0,attackTimer:0,attackInterval:3000};
+  STATE.score=0; STATE.wave=1; STATE.combo=0;
+  STATE.particles=[]; STATE.projectiles=[]; STATE.enemyProjectiles=[];
+  STATE.spellCooldowns={FIREBALL:0,LIGHTNING:0,SHIELD:0,VOID:0};
+  updateHUD();
+}
+
+function gameOver() {
+  STATE.screen='gameover';
+  playGameOver();
+  const go=document.getElementById('gameover-screen');
+  document.getElementById('final-score').textContent=STATE.score;
+  document.getElementById('final-wave').textContent=STATE.wave;
+  go.classList.remove('hidden');
+  // Slow motion particle burst
+  spawnParticles(W()*0.15,H()*0.5,'#ff3333',60,8,0.05);
+}
+
+function retryGame() {
+  document.getElementById('gameover-screen').classList.add('hidden');
+  startGame();
+}
+
+/* ══════════════════════════════════════════
+   MEDIAPIPE BOOT
+══════════════════════════════════════════ */
+async function boot() {
+  // Animate load bar
+  let pct=0;
+  const bar=document.getElementById('load-bar');
+  const iv=setInterval(()=>{
+    pct+=Math.random()*18; if(pct>=95){pct=95;clearInterval(iv);}
+    bar.style.width=pct+'%';
+  },200);
+
+  initStars();
+  requestAnimationFrame(gameLoop);
+
+  const hands=new Hands({
+    locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+  hands.setOptions({
+    maxNumHands:1,
+    modelComplexity:0,       // lite = fast
+    minDetectionConfidence:0.55, // lower = works on bad cameras
+    minTrackingConfidence:0.4
+  });
+  hands.onResults(onResults);
+
+  const camera=new Camera(videoEl2,{
+    onFrame: async()=>{ await hands.send({image:videoEl2}); },
+    width:640, height:480
+  });
+  await camera.start();
+
+  clearInterval(iv); bar.style.width='100%';
+  setTimeout(()=>{
+    document.getElementById('loader').style.transition='opacity 0.8s';
+    document.getElementById('loader').style.opacity='0';
+    setTimeout(()=>document.getElementById('loader').style.display='none',800);
+  },600);
+}
+
+boot().catch(err=>{
+  document.getElementById('loader').innerHTML=`
+    <h1 style="color:#ff3333">CAMERA ERROR</h1>
+    <p style="margin-top:12px;color:#ff6666;font-family:monospace;font-size:0.75rem">${err.message}</p>
+    <p style="margin-top:8px;font-size:0.65rem;opacity:0.4;font-family:monospace">USE CHROME + ALLOW CAMERA</p>`;
+});
+</script>
+</body>
+</html>
